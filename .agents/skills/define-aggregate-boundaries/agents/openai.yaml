@@ -1,0 +1,4 @@
+interface:
+  display_name: "Define Aggregate Boundaries"
+  short_description: "Choose small transactional aggregate roots"
+  default_prompt: "Use $define-aggregate-boundaries to choose the smallest clear transactional aggregate roots for this feature."

@@ -1,0 +1,78 @@
+Namespace: beemer
+Subsystem: tg_bot_proxy
+
+Tempo:
+  URL: localhost:4317
+  ServiceName: tg-bot-proxy
+  ServiceVersion: v1.0.0
+
+Postgres:
+  DSN:
+  MaxConnections: 10
+  MinConnections: 2
+  MinIdleConnections: 2
+  MaxConnLifetime: 30m
+
+Service:
+  GRPCPort: 5050
+  HTTPPort: 8080
+  CORS:
+    AllowedOrigins:
+      - http://localhost:3000
+    AllowedMethods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+    AllowedHeaders:
+      - Accept
+      - Authorization
+      - Content-Type
+      - X-CSRF-Token
+    ExposedHeaders: []
+    AllowCredentials: false
+    MaxAge: 300
+
+MonitoringService:
+  HTTPPort: 9090
+  ReadHeaderTimeout: 10s
+
+Telegram:
+  BaseURL: https://api.telegram.org
+  RequestTimeout: 35s
+  Bot:
+    # Stable database key for the Telegram bot.
+    ID:
+    Token:
+    Polling:
+      Interval: 1s
+      Timeout: 30s
+      LeaseDuration: 60s
+      BatchSize: 100
+      AllowedUpdates: [message]
+  # Replace this with the ID of the forum-enabled internal supergroup.
+  SupergroupID:
+  StartMessage: Welcome. Your messages will be forwarded to our team.
+
+Inbox:
+  Interval: 1s
+  BatchSize: 100
+  LeaseDuration: 30s
+  Retry:
+    MaxAttempts: 5
+    InitialDelay: 5s
+    MaxDelay: 1h
+    Multiplier: 3
+
+Outbox:
+  Interval: 1s
+  BatchSize: 20
+  WorkerPoolSize: 10
+  LeaseDuration: 60s
+  Retry:
+    MaxAttempts: 10
+    InitialDelay: 5s
+    MaxDelay: 1h
+    Multiplier: 2

@@ -1,0 +1,145 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+  publish:
+    name: Publish image
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build and publish image
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$image:$GITHUB_SHA" \
+            --tag "$image:latest" \
+            .
+          docker push "$image:$GITHUB_SHA"
+          docker push "$image:latest"
+
+  deploy:
+    name: Deploy
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Resolve image name
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "APP_IMAGE=$image:$GITHUB_SHA" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload deployment configuration
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          scp -o IdentitiesOnly=yes -P "$VPS_PORT" -i ~/.ssh/deploy_key \
+            deploy/docker-compose.yaml config/config.yaml \
+            "$VPS_USER@$VPS_HOST:/tmp/"
+
+      - name: Deploy image
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o IdentitiesOnly=yes -p "$VPS_PORT" -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
+            "bash -s -- '$APP_IMAGE'" <<'REMOTE'
+          set -euo pipefail
+
+          image="$1"
+          app_dir=/opt/tg-bot-proxy
+          previous_image=$(docker inspect --format '{{.Config.Image}}' tg-bot-proxy 2>/dev/null || true)
+
+          install -m 644 /tmp/docker-compose.yaml "$app_dir/docker-compose.yaml"
+          install -m 644 /tmp/config.yaml "$app_dir/config.yaml"
+          rm -f /tmp/docker-compose.yaml /tmp/config.yaml
+
+          printf 'APP_IMAGE=%s\n' "$image" > "$app_dir/.deploy.env.next"
+          mv "$app_dir/.deploy.env.next" "$app_dir/.deploy.env"
+
+          cd "$app_dir"
+          docker compose --env-file .deploy.env pull
+          docker compose --env-file .deploy.env up -d --remove-orphans
+
+          for attempt in $(seq 1 30); do
+            status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' tg-bot-proxy)
+            if [ "$status" = healthy ]; then
+              exit 0
+            fi
+            if [ "$status" = unhealthy ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          docker compose --env-file .deploy.env logs --no-color --tail=100 app >&2
+
+          if [ -n "$previous_image" ]; then
+            printf 'APP_IMAGE=%s\n' "$previous_image" > .deploy.env
+            docker compose --env-file .deploy.env up -d
+            echo "deployment failed; previous image restored" >&2
+          else
+            echo "initial deployment failed; no previous image exists" >&2
+          fi
+          exit 1
+          REMOTE

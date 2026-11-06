@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.agents
+deploy
+docs
+prompt
+spec
+build
+dist
+*.log

@@ -1,0 +1,34 @@
+telegram:
+  bot:
+    id: 123456789
+    token: ${TELEGRAM_BOT_TOKEN}
+    polling:
+      timeout: 30s
+      leaseDuration: 60s
+      batchSize: 100
+      allowedUpdates:
+        - message
+
+  supergroupId: -1001234567890
+
+  startMessage: |
+    Welcome. Your messages will be forwarded to our team.
+
+inbox:
+  batchSize: 100
+  leaseDuration: 30s
+  retry:
+    maxAttempts: 5
+    initialDelay: 5s
+    maxDelay: 1h
+    multiplier: 3
+
+outbox:
+  batchSize: 20
+  workerPoolSize: 10
+  leaseDuration: 60s
+  retry:
+    maxAttempts: 10
+    initialDelay: 5s
+    maxDelay: 1h
+    multiplier: 2

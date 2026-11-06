@@ -1,0 +1,29 @@
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE must be set}
+    container_name: tg-bot-proxy
+    restart: unless-stopped
+    env_file:
+      - secrets.env
+    volumes:
+      - ./config.yaml:/app/config/config.yaml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - shared-services
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/healthcheck/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  shared-services:
+    external: true
+    name: shared-services

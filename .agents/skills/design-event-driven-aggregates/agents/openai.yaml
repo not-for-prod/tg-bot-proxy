@@ -1,0 +1,4 @@
+interface:
+  display_name: "Event-Driven Aggregate Design"
+  short_description: "Design state changes through aggregate events"
+  default_prompt: "Use $design-event-driven-aggregates to design this feature around explicit aggregate transitions and durable before/after events."
